@@ -33,6 +33,9 @@ defmodule Search.MixProject do
   defp deps do
     [
       {:pgvector, "~> 0.2.0"},
+      {:bumblebee, "~> 0.3.1"},
+      {:exla, "~> 0.6"},
+      {:nx, "~> 0.6"},
       {:phoenix, "~> 1.7.7"},
       {:phoenix_ecto, "~> 4.4"},
       {:ecto_sql, "~> 3.10"},

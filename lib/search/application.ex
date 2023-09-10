@@ -10,6 +10,8 @@ defmodule Search.Application do
     children = [
       # Start the Telemetry supervisor
       SearchWeb.Telemetry,
+      # Nx for word embeddings
+      {Nx.Serving, serving: serving(), name: SentenceTransformer},
       # Start the Ecto repository
       Search.Repo,
       # Start the PubSub system
@@ -34,5 +36,16 @@ defmodule Search.Application do
   def config_change(changed, _new, removed) do
     SearchWeb.Endpoint.config_change(changed, removed)
     :ok
+  end
+
+  def serving() do
+    repo = "sentence-transformers/all-MiniLM-L6-v2"
+    {:ok, model_info} = Bumblebee.load_model({:hf, repo})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, repo})
+
+    Bumblebee.Text.TextEmbedding.text_embedding(model_info, tokenizer,
+      compile: [batch_size: 32, sequence_length: [16, 32]],
+      defn_options: [compiler: EXLA]
+    )
   end
 end
