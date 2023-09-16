@@ -23,6 +23,6 @@ defmodule Search.Item do
   end
 
   def search(embedding) do
-    Search.Repo.all(from i in Item, order_by: l2_distance(i.embedding, ^embedding), limit: 2)
+    Search.Repo.all(from i in Item, order_by: cosine_distance(i.embedding, ^embedding), limit: 2)
   end
 end

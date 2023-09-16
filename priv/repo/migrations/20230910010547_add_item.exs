@@ -9,6 +9,6 @@ defmodule Search.Repo.Migrations.AddItem do
       timestamps()
     end
 
-    create index("items", ["embedding vector_l2_ops"], using: :hnsw)
+    create index("items", ["embedding vector_cosine_ops"], using: :hnsw)
   end
 end
