@@ -39,7 +39,7 @@ defmodule Search.Application do
   end
 
   def serving() do
-    repo = "sentence-transformers/all-MiniLM-L6-v2"
+    repo = "thenlper/gte-base"
     {:ok, model_info} = Bumblebee.load_model({:hf, repo})
     {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, repo})
 

@@ -4,7 +4,7 @@ defmodule Search.Repo.Migrations.AddItem do
   def change do
     create table(:items) do
       add :text, :text
-      add :embedding, :vector, size: 384
+      add :embedding, :vector, size: 768
 
       timestamps()
     end
