@@ -60,7 +60,8 @@ defmodule SearchWeb.PageLive do
     |> Search.Repo.insert!()
 
     threads = Search.Thread |> Repo.all() |> Repo.preload(messages: :user)
-    socket = socket |> assign(threads: threads, transformer: nil)
+    selected = threads |> Enum.find(& &1.id == selected_id)
+    socket = socket |> assign(threads: threads, selected: selected, transformer: nil)
 
     {:noreply, socket}
   end
