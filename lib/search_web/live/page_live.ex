@@ -18,7 +18,7 @@ defmodule SearchWeb.PageLive do
   @impl true
   def handle_event("select_thread", %{"id" => thread_id}, socket) do
     thread = socket.assigns.threads |> Enum.find(& &1.id == String.to_integer(thread_id))
-    socket = socket |> assign(selected: thread)
+    socket = socket |> assign(selected: thread, result: nil)
 
     {:noreply, socket}
   end
