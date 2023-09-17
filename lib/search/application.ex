@@ -44,7 +44,7 @@ defmodule Search.Application do
     {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, repo})
 
     Bumblebee.Text.TextEmbedding.text_embedding(model_info, tokenizer,
-      compile: [batch_size: 32, sequence_length: [16, 32]],
+      compile: [batch_size: 32, sequence_length: [32]],
       defn_options: [compiler: EXLA]
     )
   end

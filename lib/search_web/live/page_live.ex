@@ -1,61 +1,76 @@
 defmodule SearchWeb.PageLive do
   use SearchWeb, :live_view
 
+  import Phoenix.HTML.Form
+
+  alias Search.Repo
+
   @impl true
   def mount(_, _, socket) do
-    socket = socket |> assign(task: nil, transformer: nil)
+    user = Search.User |> Repo.get_by!(name: "toran billups")
+    threads = Search.Thread |> Repo.all() |> Repo.preload(messages: :user)
+
+    socket = socket |> assign(user: user, threads: threads, text: nil, selected: nil, search: nil, query: nil, transformer: nil)
 
     {:ok, socket}
   end
 
   @impl true
-  def handle_event("start", _value, socket) do
-    text = "the tiny dog"
-    # text = "the big human"
-    # text = "the little tree"
-    # text = "the big truck"
-    # text = "the big car"
-    # text = "the happy dinosaur"
-
-    transformer =
-      Task.async(fn ->
-        {text, Nx.Serving.batched_run(SentenceTransformer, text)}
-      end)
-
-    socket = socket |> assign(task: nil, transformer: transformer)
+  def handle_event("select_thread", %{"id" => thread_id}, socket) do
+    thread = socket.assigns.threads |> Enum.find(& &1.id == String.to_integer(thread_id))
+    socket = socket |> assign(selected: thread)
 
     {:noreply, socket}
   end
 
   @impl true
-  def handle_event("query", _value, socket) do
-    text = "the huge person"
+  def handle_event("change_text", %{"message" => text}, socket) do
+    socket = socket |> assign(text: text)
 
-    query =
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("add_message", %{"message" => text}, socket) do
+    transformer =
       Task.async(fn ->
-        Nx.Serving.batched_run(SentenceTransformer, text)
+        {socket.assigns.selected.id, text, Nx.Serving.batched_run(SentenceTransformer, text)}
       end)
 
-    socket = socket |> assign(task: nil, query: query)
+    socket = socket |> assign(transformer: transformer, text: nil)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("query", %{"value" => value}, socket) do
+    query =
+      Task.async(fn ->
+        Nx.Serving.batched_run(SentenceTransformer, value)
+      end)
+
+    socket = socket |> assign(query: query)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({ref, {selected_id, text, %{embedding: embedding}}}, socket) when socket.assigns.transformer.ref == ref do
+    %Search.Message{thread_id: selected_id, user_id: socket.assigns.user.id, text: text, embedding: embedding}
+    |> Search.Repo.insert!()
+
+    threads = Search.Thread |> Repo.all() |> Repo.preload(messages: :user)
+    socket = socket |> assign(threads: threads, transformer: nil)
 
     {:noreply, socket}
   end
 
   @impl true
   def handle_info({ref, %{embedding: embedding}}, socket) when socket.assigns.query.ref == ref do
-    Search.Item.search(embedding)
-    |> IO.inspect(label: "query result")
+    Search.Message.search(embedding)
+    |> IO.inspect(label: "search result")
 
     {:noreply, assign(socket, query: nil)}
-  end
-
-  @impl true
-  def handle_info({ref, {text, %{embedding: embedding}}}, socket)
-      when socket.assigns.transformer.ref == ref do
-    %Search.Item{text: text, embedding: embedding}
-    |> Search.Repo.insert!()
-
-    {:noreply, assign(socket, transformer: nil)}
   end
 
   @impl true
@@ -66,25 +81,80 @@ defmodule SearchWeb.PageLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="h-screen">
-      <div class="flex w-full justify-center items-center">
-        <div class="flex justify-center items-center h-20 w-20 rounded-full bg-gray-700 p-2"></div>
+    <div class="flex flex-col grow px-2 sm:px-4 lg:px-8 py-10">
+      <div class="mt-4">
+        <label class="relative flex items-center">
+          <input value={@search} phx-keyup="query" phx-debounce="500" placeholder="ask a question ..." type="text" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm placeholder:text-gray-400 text-gray-900 pl-8">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" class="absolute left-2 h-5 text-gray-500">
+            <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path>
+          </svg>
+        </label>
       </div>
-      <div class="flex h-screen w-full justify-center items-center">
-        <div id="mic-element" class="flex h-20 w-20 rounded-full bg-gray-700 p-2" phx-hook="Demo">
-          <div
-            :if={@task}
-            class="h-full w-full bg-white rounded-full ring-2 ring-white animate-spin border-4 border-solid border-blue-500 border-t-transparent"
-          >
+      <div class="flex flex-col grow relative -mb-8 mt-2 mt-2">
+        <div class="absolute inset-0 gap-4">
+          <div class="h-full flex flex-col bg-white shadow-sm border rounded-md">
+            <div class="grid-cols-4 h-full grid divide-x">
+              <div class="flex flex-col hover:scroll-auto">
+                <div class="flex flex-col justify-stretch grow p-2">
+                  <%= for thread <- @threads do %>
+                  <div id={"thread-#{thread.id}"} class="flex flex-col justify-stretch">
+                    <button type="button" phx-click="select_thread" phx-value-id={thread.id} class={"flex p-4 items-center justify-between rounded-md hover:bg-gray-100 text-sm text-left text-gray-700 outline-none #{if @selected && @selected.id == thread.id, do: "bg-gray-100"}"}>
+                      <div class="flex flex-col overflow-hidden">
+                        <div class="inline-flex items-center space-x-1 font-medium text-sm text-gray-800">
+                          <div class="p-1 rounded-full bg-gray-200 text-gray-900">
+                            <div class="rounded-full w-9 h-9 min-w-9 flex justify-center items-center text-base bg-purple-600 text-white capitalize"><%= String.first(thread.title) %></div>
+                          </div>
+                          <span class="pl-1 capitalize"><%= thread.title %></span>
+                        </div>
+                        <div class="hidden mt-1 inline-flex justify-start items-center flex-nowrap text-xs text-gray-500 overflow-hidden">
+                          <span class="whitespace-nowrap text-ellipsis overflow-hidden"><%= thread.title %></span>
+                          <span class="mx-1 inline-flex rounded-full w-0.5 h-0.5 min-w-0.5 bg-gray-500"></span>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                  <% end %>
+                </div>
+              </div>
+              <div class="block relative col-span-3">
+                <div class="flex absolute inset-0 flex-col">
+                  <div class="relative flex grow overflow-y-hidden">
+                    <div :if={!is_nil(@selected)} class="pt-4 pb-1 px-4 flex flex-col grow overflow-y-auto">
+                      <%= for message <- @selected.messages do %>
+                      <div :if={message.user_id != @user.id} id={"message-#{message.id}"} class="my-2 flex flex-row justify-start space-x-1 self-start items-start">
+                        <div class="rounded-full w-9 h-9 min-w-9 flex justify-center items-center text-base bg-gray-100 text-gray-900 capitalize"><%= String.first(message.user.name) %></div>
+                        <div class="flex flex-col space-y-0.5 self-start items-start">
+                          <div class="bg-gray-200 text-gray-900 ml-0 mr-12 py-2 px-3 inline-flex text-sm rounded-lg whitespace-pre-wrap"><%= message.text %></div>
+                          <div class="mx-1 text-xs text-gray-500"><%= Calendar.strftime(message.inserted_at, "%B %d, %-I:%M %p") %></div>
+                        </div>
+                      </div>
+                      <div :if={message.user_id == @user.id} id={"message-#{message.id}"} class="my-2 flex flex-row justify-start space-x-1 self-end items-end">
+                        <div class="flex flex-col space-y-0.5 self-end items-end">
+                          <div class="bg-purple-600 text-gray-50 ml-12 mr-0 py-2 px-3 inline-flex text-sm rounded-lg whitespace-pre-wrap"><%= message.text %></div>
+                          <div class="mx-1 text-xs text-gray-500"><%= Calendar.strftime(message.inserted_at, "%B %d, %-I:%M %p") %></div>
+                        </div>
+                      </div>
+                      <% end %>
+                    </div>
+                  </div>
+                  <form class="px-4 py-2 flex flex-row items-end gap-x-2" phx-submit="add_message" phx-change="change_text">
+                    <div class="flex flex-col grow rounded-md border border-gray-300">
+                      <div class="relative flex grow">
+                        <input id="message" name="message" value={@text} class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm placeholder:text-gray-400 text-gray-900" placeholder="Aa" type="text" />
+                      </div>
+                    </div>
+                    <div class="ml-1">
+                      <button type="submit" class="flex items-center justify-center h-10 w-10 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-500">
+                        <svg class="w-5 h-5 transform rotate-90 -mr-px" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                        </svg>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
           </div>
-          <button
-            :if={!@task}
-            class="h-full w-full bg-red-500 rounded-full ring-2 ring-white"
-            type="button"
-            phx-click="start"
-            class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-          >
-          </button>
         </div>
       </div>
     </div>
