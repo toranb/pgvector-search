@@ -17,15 +17,17 @@ defmodule Search.Message do
     timestamps()
   end
 
-  @required_fields [:thread_id, :user_id, :text]
+  @required_attrs [:thread_id, :user_id, :text]
+  @optional_attrs [:embedding]
 
   def changeset(message, params \\ %{}) do
     message
-    |> cast(params, @required_attrs)
+    |> cast(params, @required_attrs ++ @optional_attrs)
     |> validate_required(@required_attrs)
   end
 
   def search(embedding) do
     Search.Repo.all(from i in Message, order_by: cosine_distance(i.embedding, ^embedding), limit: 1)
+    |> List.first()
   end
 end

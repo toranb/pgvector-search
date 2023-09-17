@@ -11,7 +11,7 @@ defmodule Search.User do
     timestamps()
   end
 
-  @required_fields [:name]
+  @required_attrs [:name]
 
   def changeset(user, params \\ %{}) do
     user

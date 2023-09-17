@@ -1,8 +1,6 @@
 defmodule SearchWeb.PageLive do
   use SearchWeb, :live_view
 
-  import Phoenix.HTML.Form
-
   alias Search.Repo
 
   @impl true
@@ -10,7 +8,7 @@ defmodule SearchWeb.PageLive do
     user = Search.User |> Repo.get_by!(name: "toran billups")
     threads = Search.Thread |> Repo.all() |> Repo.preload(messages: :user)
 
-    socket = socket |> assign(user: user, threads: threads, text: nil, selected: nil, search: nil, query: nil, transformer: nil)
+    socket = socket |> assign(user: user, threads: threads, result: nil, text: nil, selected: nil, query: nil, transformer: nil, llama: nil)
 
     {:ok, socket}
   end
@@ -32,21 +30,31 @@ defmodule SearchWeb.PageLive do
 
   @impl true
   def handle_event("add_message", %{"message" => text}, socket) do
+    user_id = socket.assigns.user.id
+    selected_id = socket.assigns.selected.id
+
+    message =
+      %Search.Message{}
+      |> Search.Message.changeset(%{text: text, thread_id: selected_id, user_id: user_id})
+      |> Repo.insert!()
+
     transformer =
       Task.async(fn ->
-        {socket.assigns.selected.id, text, Nx.Serving.batched_run(SentenceTransformer, text)}
+        {message.id, Nx.Serving.batched_run(SentenceTransformer, text)}
       end)
 
-    socket = socket |> assign(transformer: transformer, text: nil)
+    threads = Search.Thread |> Repo.all() |> Repo.preload(messages: :user)
+    selected = threads |> Enum.find(& &1.id == selected_id)
+    socket = socket |> assign(threads: threads, selected: selected, transformer: transformer, text: nil)
 
     {:noreply, socket}
   end
 
   @impl true
-  def handle_event("query", %{"value" => value}, socket) do
+  def handle_event("query", %{"search" => value}, socket) do
     query =
       Task.async(fn ->
-        Nx.Serving.batched_run(SentenceTransformer, value)
+        {value, Nx.Serving.batched_run(SentenceTransformer, value)}
       end)
 
     socket = socket |> assign(query: query)
@@ -55,23 +63,37 @@ defmodule SearchWeb.PageLive do
   end
 
   @impl true
-  def handle_info({ref, {selected_id, text, %{embedding: embedding}}}, socket) when socket.assigns.transformer.ref == ref do
-    %Search.Message{thread_id: selected_id, user_id: socket.assigns.user.id, text: text, embedding: embedding}
-    |> Search.Repo.insert!()
+  def handle_info({ref, {message_id, %{embedding: embedding}}}, socket) when socket.assigns.transformer.ref == ref do
+    Search.Message
+    |> Repo.get!(message_id)
+    |> Search.Message.changeset(%{embedding: embedding})
+    |> Repo.update!()
 
-    threads = Search.Thread |> Repo.all() |> Repo.preload(messages: :user)
-    selected = threads |> Enum.find(& &1.id == selected_id)
-    socket = socket |> assign(threads: threads, selected: selected, transformer: nil)
+    socket = socket |> assign(transformer: nil)
 
     {:noreply, socket}
   end
 
   @impl true
-  def handle_info({ref, %{embedding: embedding}}, socket) when socket.assigns.query.ref == ref do
-    Search.Message.search(embedding)
-    |> IO.inspect(label: "search result")
+  def handle_info({ref, {question, %{embedding: embedding}}}, socket) when socket.assigns.query.ref == ref do
+    %Search.Message{thread_id: thread_id} = Search.Message.search(embedding)
 
-    {:noreply, assign(socket, query: nil)}
+    thread = socket.assigns.threads |> Enum.find(& &1.id == thread_id)
+
+    llama =
+      Task.async(fn ->
+        {thread.id, Nx.Serving.batched_run(MachineLearning, prompt(question, thread))}
+      end)
+
+    {:noreply, assign(socket, query: nil, llama: llama)}
+  end
+
+  @impl true
+  def handle_info({ref, {thread_id, %{results: results}}}, socket) when socket.assigns.llama.ref == ref do
+    [%{text: result}] = results
+    thread = socket.assigns.threads |> Enum.find(& &1.id == thread_id)
+
+    {:noreply, assign(socket, llama: nil, selected: thread, result: result)}
   end
 
   @impl true
@@ -79,18 +101,36 @@ defmodule SearchWeb.PageLive do
     {:noreply, socket}
   end
 
+  def prompt(question, thread) do
+    context =
+      thread.messages
+      |> Enum.reduce("", fn message, acc ->
+        if String.length(acc) == 0 do
+          message
+        else
+          acc <> ", " <> message
+        end
+      end)
+
+    """
+    You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you do not know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise. \
+    Question: #{question} \
+    Context: #{context}
+    """
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
     <div class="flex flex-col grow px-2 sm:px-4 lg:px-8 py-10">
-      <div class="mt-4">
+      <form class="mt-4" phx-submit="query">
         <label class="relative flex items-center">
-          <input value={@search} phx-keyup="query" phx-debounce="500" placeholder="ask a question ..." type="text" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm placeholder:text-gray-400 text-gray-900 pl-8">
+          <input id="search" name="search" type="search" placeholder="ask a question ..." class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm placeholder:text-gray-400 text-gray-900 pl-8">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" class="absolute left-2 h-5 text-gray-500">
             <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path>
           </svg>
         </label>
-      </div>
+      </form>
       <div class="flex flex-col grow relative -mb-8 mt-2 mt-2">
         <div class="absolute inset-0 gap-4">
           <div class="h-full flex flex-col bg-white shadow-sm border rounded-md">
@@ -117,7 +157,7 @@ defmodule SearchWeb.PageLive do
                   <% end %>
                 </div>
               </div>
-              <div class="block relative col-span-3">
+              <div class={"block relative #{if is_nil(@result), do: "col-span-3", else: "col-span-2"}"}>
                 <div class="flex absolute inset-0 flex-col">
                   <div class="relative flex grow overflow-y-hidden">
                     <div :if={!is_nil(@selected)} class="pt-4 pb-1 px-4 flex flex-col grow overflow-y-auto">
@@ -154,6 +194,15 @@ defmodule SearchWeb.PageLive do
                   </form>
                 </div>
               </div>
+              <div :if={!is_nil(@result)} class="block col-span-1 relative">
+                <div class="flex absolute inset-0 flex-col justify-stretch">
+                  <div class="p-4 space-y-6 flex flex-col grow overflow-y-scroll"><div>
+                  <p class="font-medium text-sm text-gray-900">Summary</p>
+                  <p class="text-sm text-gray-900"><%= @result %></p>
+                </div>
+              </div>
+            </div>
+          </div>
             </div>
           </div>
         </div>
