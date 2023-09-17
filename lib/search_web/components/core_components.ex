@@ -286,6 +286,33 @@ defmodule SearchWeb.CoreComponents do
 
   slot :inner_block
 
+  def ghost_summary(assigns) do
+    ~H"""
+      <div class="p-4">
+        <div role="status" class="max-w-sm animate-pulse">
+            <div class="h-2.5 bg-gray-100 rounded-full dark:bg-gray-200 w-40 mb-5"></div>
+            <div class="h-2 bg-gray-100 rounded-full dark:bg-gray-200 max-w-[360px] mb-3"></div>
+            <div class="h-2 bg-gray-100 rounded-full dark:bg-gray-200 mb-2.5"></div>
+            <div class="h-2 bg-gray-100 rounded-full dark:bg-gray-200 max-w-[250px] mb-3"></div>
+            <div class="h-2 bg-gray-100 rounded-full dark:bg-gray-200 max-w-[300px] mb-3"></div>
+            <div class="h-2 bg-gray-100 rounded-full dark:bg-gray-200 max-w-[200px]"></div>
+            <div class="py-3.5"></div>
+            <div class="h-2 bg-gray-100 rounded-full dark:bg-gray-200 max-w-[360px] mb-3"></div>
+            <div class="h-2 bg-gray-100 rounded-full dark:bg-gray-200 mb-3"></div>
+            <div class="h-2 bg-gray-100 rounded-full dark:bg-gray-200 max-w-[220px]"></div>
+            <div class="py-3.5"></div>
+            <div class="h-2 bg-gray-100 rounded-full dark:bg-gray-200 max-w-[360px] mb-3"></div>
+            <div class="h-2 bg-gray-100 rounded-full dark:bg-gray-200 mb-3"></div>
+            <div class="h-2 bg-gray-100 rounded-full dark:bg-gray-200 max-w-[250px] mb-3"></div>
+            <div class="h-2 bg-gray-100 rounded-full dark:bg-gray-200 max-w-[300px] mb-3"></div>
+            <div class="h-2 bg-gray-100 rounded-full dark:bg-gray-200 max-w-[200px]"></div>
+            <span class="sr-only">Loading...</span>
+        </div>
+      </div>
+
+    """
+  end
+
   def input(%{field: %Phoenix.HTML.FormField{} = field} = assigns) do
     assigns
     |> assign(field: nil, id: assigns.id || field.id)

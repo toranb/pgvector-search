@@ -32,6 +32,7 @@ defmodule Search.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
+      {:replicate, "~> 1.1.1"},
       {:pgvector, "~> 0.2.0"},
       {:bumblebee, "~> 0.3.1"},
       {:exla, "~> 0.6"},
@@ -66,7 +67,7 @@ defmodule Search.MixProject do
   defp aliases do
     [
       setup: ["deps.get", "ecto.setup", "assets.setup", "assets.build"],
-      "ecto.setup": ["ecto.create", "ecto.migrate"],
+      "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seed.dev.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],

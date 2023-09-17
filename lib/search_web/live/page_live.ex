@@ -5,10 +5,12 @@ defmodule SearchWeb.PageLive do
 
   @impl true
   def mount(_, _, socket) do
+    model = Replicate.Models.get!("meta/llama-2-7b-chat")
+    version = Replicate.Models.get_latest_version!(model)
     user = Search.User |> Repo.get_by!(name: "toran billups")
     threads = Search.Thread |> Repo.all() |> Repo.preload(messages: :user)
 
-    socket = socket |> assign(user: user, threads: threads, result: nil, text: nil, selected: nil, query: nil, transformer: nil, llama: nil)
+    socket = socket |> assign(version: version, user: user, threads: threads, result: nil, text: nil, loading: false, selected: nil, query: nil, transformer: nil, llama: nil)
 
     {:ok, socket}
   end
@@ -51,13 +53,18 @@ defmodule SearchWeb.PageLive do
   end
 
   @impl true
-  def handle_event("query", %{"search" => value}, socket) do
+  def handle_event("query", %{"search" => value}, %{assigns: %{loading: true}} = socket) do
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("query", %{"search" => value}, %{assigns: %{loading: false}} = socket) do
     query =
       Task.async(fn ->
         {value, Nx.Serving.batched_run(SentenceTransformer, value)}
       end)
 
-    socket = socket |> assign(query: query)
+    socket = socket |> assign(query: query, loading: true)
 
     {:noreply, socket}
   end
@@ -79,44 +86,29 @@ defmodule SearchWeb.PageLive do
     %Search.Message{thread_id: thread_id} = Search.Message.search(embedding)
 
     thread = socket.assigns.threads |> Enum.find(& &1.id == thread_id)
+    prompt = Search.Replicate.generate_prompt(question, thread)
+    version = socket.assigns.version
 
     llama =
       Task.async(fn ->
-        {thread.id, Nx.Serving.batched_run(MachineLearning, prompt(question, thread))}
+        {:ok, prediction} = Replicate.Predictions.create(version, %{prompt: prompt})
+        {thread.id, Replicate.Predictions.wait(prediction)}
       end)
 
-    {:noreply, assign(socket, query: nil, llama: llama)}
+    {:noreply, assign(socket, query: nil, llama: llama, selected: thread)}
   end
 
   @impl true
-  def handle_info({ref, {thread_id, %{results: results}}}, socket) when socket.assigns.llama.ref == ref do
-    [%{text: result}] = results
+  def handle_info({ref, {thread_id, {:ok, prediction}}}, socket) when socket.assigns.llama.ref == ref do
+    result = Enum.join(prediction.output)
     thread = socket.assigns.threads |> Enum.find(& &1.id == thread_id)
 
-    {:noreply, assign(socket, llama: nil, selected: thread, result: result)}
+    {:noreply, assign(socket, llama: nil, result: result, selected: thread, loading: false)}
   end
 
   @impl true
   def handle_info(_, socket) do
     {:noreply, socket}
-  end
-
-  def prompt(question, thread) do
-    context =
-      thread.messages
-      |> Enum.reduce("", fn message, acc ->
-        if String.length(acc) == 0 do
-          message
-        else
-          acc <> ", " <> message
-        end
-      end)
-
-    """
-    You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you do not know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise. \
-    Question: #{question} \
-    Context: #{context}
-    """
   end
 
   @impl true
@@ -125,7 +117,7 @@ defmodule SearchWeb.PageLive do
     <div class="flex flex-col grow px-2 sm:px-4 lg:px-8 py-10">
       <form class="mt-4" phx-submit="query">
         <label class="relative flex items-center">
-          <input id="search" name="search" type="search" placeholder="ask a question ..." class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm placeholder:text-gray-400 text-gray-900 pl-8">
+          <input id="search" name="search" type="search" placeholder="ask a question ..." class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm placeholder:text-gray-400 text-gray-900 pl-8" autofocus>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" class="absolute left-2 h-5 text-gray-500">
             <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path>
           </svg>
@@ -157,7 +149,7 @@ defmodule SearchWeb.PageLive do
                   <% end %>
                 </div>
               </div>
-              <div class={"block relative #{if is_nil(@result), do: "col-span-3", else: "col-span-2"}"}>
+              <div class={"block relative #{if @loading || !is_nil(@result), do: "col-span-2", else: "col-span-3"}"}>
                 <div class="flex absolute inset-0 flex-col">
                   <div class="relative flex grow overflow-y-hidden">
                     <div :if={!is_nil(@selected)} class="pt-4 pb-1 px-4 flex flex-col grow overflow-y-auto">
@@ -194,11 +186,16 @@ defmodule SearchWeb.PageLive do
                   </form>
                 </div>
               </div>
+              <div :if={!is_nil(@selected) && @loading} class="block col-span-1 relative">
+                <div class="flex absolute inset-0 flex-col justify-stretch">
+                  <.ghost_summary />
+                </div>
+              </div>
               <div :if={!is_nil(@result)} class="block col-span-1 relative">
                 <div class="flex absolute inset-0 flex-col justify-stretch">
-                  <div class="p-4 space-y-6 flex flex-col grow overflow-y-scroll"><div>
+                  <div class="p-4 space-y-6 flex flex-col grow overflow-y-auto"><div>
                   <p class="font-medium text-sm text-gray-900">Summary</p>
-                  <p class="text-sm text-gray-900"><%= @result %></p>
+                  <p class="pt-4 text-sm text-gray-900"><%= @result %></p>
                 </div>
               </div>
             </div>
