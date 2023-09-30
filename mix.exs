@@ -34,7 +34,7 @@ defmodule Search.MixProject do
     [
       {:replicate, "~> 1.1.1"},
       {:pgvector, "~> 0.2.0"},
-      {:bumblebee, "~> 0.3.1"},
+      {:bumblebee, "~> 0.4.2"},
       {:exla, "~> 0.6"},
       {:nx, "~> 0.6"},
       {:phoenix, "~> 1.7.7"},
