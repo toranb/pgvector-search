@@ -11,8 +11,11 @@ defmodule Search.Replicate do
       end)
 
     """
-    <s>[INST] <<SYS>>You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you do not know the answer, just say that you don't know. Use two sentences maximum and keep the answer concise.<</SYS>> \
-    Question: #{question} \
+    [INST] <<SYS>>
+    You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question.
+    If you do not know the answer, just say that you don't know. Use two sentences maximum and keep the answer concise.
+    <</SYS>>
+    Question: #{question}
     Context: #{context}[/INST]
     """
   end

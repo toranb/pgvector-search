@@ -11,7 +11,7 @@ defmodule Search.Application do
       # Start the Telemetry supervisor
       SearchWeb.Telemetry,
       # Nx for word embeddings
-      # {Nx.Serving, serving: llama(), name: MachineLearning},
+      # {Nx.Serving, serving: llama(), name: ChatServing},
       {Nx.Serving, serving: serving(), name: SentenceTransformer},
       # Start the Ecto repository
       Search.Repo,
@@ -51,13 +51,14 @@ defmodule Search.Application do
   end
 
   def llama() do
-    auth_token = "abc123"
-    llama = "meta-llama/Llama-2-7b-chat-hf"
-    {:ok, model_info} = Bumblebee.load_model({:hf, llama, auth_token: auth_token})
-    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, llama, auth_token: auth_token})
-    {:ok, generation_config} = Bumblebee.load_generation_config({:hf, llama, auth_token: auth_token})
+    auth_token = System.fetch_env!("HF_AUTH_TOKEN")
+    llama = {:hf, "meta-llama/Llama-2-7b-chat-hf", auth_token: auth_token}
 
-    generation_config = Bumblebee.configure(generation_config, max_new_tokens: 500)
-    Bumblebee.Text.generation(model_info, tokenizer, generation_config)
+    {:ok, model_info} = Bumblebee.load_model(llama, backend: {EXLA.Backend, client: :host})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer(llama)
+    {:ok, generation_config} = Bumblebee.load_generation_config(llama)
+
+    generation_config = Bumblebee.configure(generation_config, max_new_tokens: 100)
+    Bumblebee.Text.generation(model_info, tokenizer, generation_config, defn_options: [compiler: EXLA])
   end
 end

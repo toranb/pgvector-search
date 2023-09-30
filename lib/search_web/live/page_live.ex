@@ -53,7 +53,7 @@ defmodule SearchWeb.PageLive do
   end
 
   @impl true
-  def handle_event("query", %{"search" => value}, %{assigns: %{loading: true}} = socket) do
+  def handle_event("query", %{"search" => _value}, %{assigns: %{loading: true}} = socket) do
     {:noreply, socket}
   end
 
@@ -64,7 +64,7 @@ defmodule SearchWeb.PageLive do
         {value, Nx.Serving.batched_run(SentenceTransformer, value)}
       end)
 
-    socket = socket |> assign(query: query, loading: true)
+    socket = socket |> assign(query: query, loading: true, result: nil)
 
     {:noreply, socket}
   end
@@ -95,12 +95,26 @@ defmodule SearchWeb.PageLive do
         {thread.id, Replicate.Predictions.wait(prediction)}
       end)
 
+    # llama =
+    #   Task.async(fn ->
+    #     {thread.id, Nx.Serving.batched_run(ChatServing, prompt)}
+    #   end)
+
     {:noreply, assign(socket, query: nil, llama: llama, selected: thread)}
   end
 
   @impl true
   def handle_info({ref, {thread_id, {:ok, prediction}}}, socket) when socket.assigns.llama.ref == ref do
     result = Enum.join(prediction.output)
+    thread = socket.assigns.threads |> Enum.find(& &1.id == thread_id)
+
+    {:noreply, assign(socket, llama: nil, result: result, selected: thread, loading: false)}
+  end
+
+  @impl true
+  def handle_info({ref, {thread_id, %{results: [%{text: text}]}}}, socket) when socket.assigns.llama.ref == ref do
+    [_, result] = String.split(text, "[/INST]\n")
+
     thread = socket.assigns.threads |> Enum.find(& &1.id == thread_id)
 
     {:noreply, assign(socket, llama: nil, result: result, selected: thread, loading: false)}
