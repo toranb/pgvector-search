@@ -5,12 +5,10 @@ defmodule SearchWeb.PageLive do
 
   @impl true
   def mount(_, _, socket) do
-    model = Replicate.Models.get!("meta/llama-2-7b-chat")
-    version = Replicate.Models.get_latest_version!(model)
     user = Search.User |> Repo.get_by!(name: "toran billups")
     threads = Search.Thread |> Repo.all() |> Repo.preload(messages: :user)
 
-    socket = socket |> assign(version: version, user: user, threads: threads, result: nil, text: nil, loading: false, selected: nil, query: nil, transformer: nil, llama: nil)
+    socket = socket |> assign(user: user, threads: threads, result: nil, text: nil, loading: false, selected: nil, query: nil, transformer: nil)
 
     {:ok, socket}
   end
@@ -61,7 +59,7 @@ defmodule SearchWeb.PageLive do
   def handle_event("query", %{"search" => value}, %{assigns: %{loading: false}} = socket) do
     query =
       Task.async(fn ->
-        {value, Nx.Serving.batched_run(SentenceTransformer, value)}
+        Nx.Serving.batched_run(SentenceTransformer, value)
       end)
 
     socket = socket |> assign(query: query, loading: true, result: nil)
@@ -82,42 +80,11 @@ defmodule SearchWeb.PageLive do
   end
 
   @impl true
-  def handle_info({ref, {question, %{embedding: embedding}}}, socket) when socket.assigns.query.ref == ref do
+  def handle_info({ref, %{embedding: embedding}}, socket) when socket.assigns.query.ref == ref do
     %Search.Message{thread_id: thread_id} = Search.Message.search(embedding)
-
-    thread = socket.assigns.threads |> Enum.find(& &1.id == thread_id)
-    prompt = Search.Replicate.generate_prompt(question, thread)
-    version = socket.assigns.version
-
-    llama =
-      Task.async(fn ->
-        {:ok, prediction} = Replicate.Predictions.create(version, %{prompt: prompt})
-        {thread.id, Replicate.Predictions.wait(prediction)}
-      end)
-
-    # llama =
-    #   Task.async(fn ->
-    #     {thread.id, Nx.Serving.batched_run(ChatServing, prompt)}
-    #   end)
-
-    {:noreply, assign(socket, query: nil, llama: llama, selected: thread)}
-  end
-
-  @impl true
-  def handle_info({ref, {thread_id, {:ok, prediction}}}, socket) when socket.assigns.llama.ref == ref do
-    result = Enum.join(prediction.output)
     thread = socket.assigns.threads |> Enum.find(& &1.id == thread_id)
 
-    {:noreply, assign(socket, llama: nil, result: result, selected: thread, loading: false)}
-  end
-
-  @impl true
-  def handle_info({ref, {thread_id, %{results: [%{text: text}]}}}, socket) when socket.assigns.llama.ref == ref do
-    [_, result] = String.split(text, "[/INST]\n")
-
-    thread = socket.assigns.threads |> Enum.find(& &1.id == thread_id)
-
-    {:noreply, assign(socket, llama: nil, result: result, selected: thread, loading: false)}
+    {:noreply, assign(socket, query: nil, selected: thread, loading: false)}
   end
 
   @impl true
@@ -163,13 +130,13 @@ defmodule SearchWeb.PageLive do
                   <% end %>
                 </div>
               </div>
-              <div class={"block relative #{if @loading || !is_nil(@result), do: "col-span-2", else: "col-span-3"}"}>
+              <div class="block relative col-span-3">
                 <div class="flex absolute inset-0 flex-col">
                   <div class="relative flex grow overflow-y-hidden">
                     <div :if={!is_nil(@selected)} class="pt-4 pb-1 px-4 flex flex-col grow overflow-y-auto">
                       <%= for message <- @selected.messages do %>
                       <div :if={message.user_id != @user.id} id={"message-#{message.id}"} class="my-2 flex flex-row justify-start space-x-1 self-start items-start">
-                        <div class="rounded-full w-9 h-9 min-w-9 flex justify-center items-center text-base bg-gray-100 text-gray-900 capitalize"><%= String.first(message.user.name) %></div>
+                        <div class="hidden rounded-full w-9 h-9 min-w-9 flex justify-center items-center text-base bg-gray-100 text-gray-900 capitalize"><%= String.first(message.user.name) %></div>
                         <div class="flex flex-col space-y-0.5 self-start items-start">
                           <div class="bg-gray-200 text-gray-900 ml-0 mr-12 py-2 px-3 inline-flex text-sm rounded-lg whitespace-pre-wrap"><%= message.text %></div>
                           <div class="mx-1 text-xs text-gray-500"><%= Calendar.strftime(message.inserted_at, "%B %d, %-I:%M %p") %></div>
@@ -200,20 +167,6 @@ defmodule SearchWeb.PageLive do
                   </form>
                 </div>
               </div>
-              <div :if={!is_nil(@selected) && @loading} class="block col-span-1 relative">
-                <div class="flex absolute inset-0 flex-col justify-stretch">
-                  <.ghost_summary />
-                </div>
-              </div>
-              <div :if={!is_nil(@result)} class="block col-span-1 relative">
-                <div class="flex absolute inset-0 flex-col justify-stretch">
-                  <div class="p-4 space-y-6 flex flex-col grow overflow-y-auto"><div>
-                  <p class="font-medium text-sm text-gray-900">Summary</p>
-                  <p class="pt-4 text-sm text-gray-900"><%= @result %></p>
-                </div>
-              </div>
-            </div>
-          </div>
             </div>
           </div>
         </div>

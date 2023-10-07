@@ -49,16 +49,4 @@ defmodule Search.Application do
       defn_options: [compiler: EXLA]
     )
   end
-
-  def llama() do
-    auth_token = System.fetch_env!("HF_AUTH_TOKEN")
-    llama = {:hf, "meta-llama/Llama-2-7b-chat-hf", auth_token: auth_token}
-
-    {:ok, model_info} = Bumblebee.load_model(llama, backend: {EXLA.Backend, client: :host})
-    {:ok, tokenizer} = Bumblebee.load_tokenizer(llama)
-    {:ok, generation_config} = Bumblebee.load_generation_config(llama)
-
-    generation_config = Bumblebee.configure(generation_config, max_new_tokens: 100)
-    Bumblebee.Text.generation(model_info, tokenizer, generation_config, defn_options: [compiler: EXLA])
-  end
 end
