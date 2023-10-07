@@ -11,7 +11,6 @@ defmodule Search.Application do
       # Start the Telemetry supervisor
       SearchWeb.Telemetry,
       # Nx for word embeddings
-      # {Nx.Serving, serving: llama(), name: ChatServing},
       {Nx.Serving, serving: serving(), name: SentenceTransformer},
       # Start the Ecto repository
       Search.Repo,
