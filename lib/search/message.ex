@@ -27,7 +27,9 @@ defmodule Search.Message do
   end
 
   def search(embedding) do
-    Search.Repo.all(from i in Message, order_by: cosine_distance(i.embedding, ^embedding), limit: 1)
+    Search.Repo.all(
+      from i in Message, order_by: max_inner_product(i.embedding, ^embedding), limit: 1
+    )
     |> List.first()
   end
 end

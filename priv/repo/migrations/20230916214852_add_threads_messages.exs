@@ -24,6 +24,6 @@ defmodule Search.Repo.Migrations.AddThreadsMessages do
       timestamps()
     end
 
-    create index("messages", ["embedding vector_cosine_ops"], using: :hnsw)
+    create index("messages", ["embedding vector_ip_ops"], using: :hnsw)
   end
 end
