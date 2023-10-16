@@ -11,7 +11,7 @@ defmodule Search.Application do
       # Start the Telemetry supervisor
       SearchWeb.Telemetry,
       # Nx for word embeddings
-      {Nx.Serving, serving: serving(), name: SentenceTransformer},
+      # {Nx.Serving, serving: serving(), name: SentenceTransformer},
       # Start the Ecto repository
       Search.Repo,
       # Start the PubSub system
