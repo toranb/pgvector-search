@@ -39,11 +39,32 @@ defmodule SearchWeb.PageLive do
         Replicate.Predictions.wait(prediction)
       end)
 
+    # llama =
+    #   Task.async(fn ->
+    #     {text, Nx.Serving.batched_run(ChatServing, text)}
+    #   end)
+
     messages = Search.Message |> Repo.all()
 
     socket = socket |> assign(messages: messages, llama: llama, text: nil, loading: true)
 
     {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({ref, {question, %{results: [%{text: text}]}}}, socket) when socket.assigns.llama.ref == ref do
+    [_, result] = String.split(text, "#{question}")
+
+    thread = socket.assigns.thread
+    apple = Search.User |> Repo.get_by!(name: "apple rep")
+
+    %Search.Message{}
+    |> Search.Message.changeset(%{text: result, thread_id: thread.id, user_id: apple.id})
+    |> Repo.insert!()
+
+    messages = Search.Message |> Repo.all()
+
+    {:noreply, assign(socket, messages: messages, llama: nil, loading: false)}
   end
 
   @impl true
