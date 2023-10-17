@@ -10,6 +10,8 @@ defmodule Search.Application do
     children = [
       # Start the Telemetry supervisor
       SearchWeb.Telemetry,
+      # Chat with llama 2
+      {Nx.Serving, serving: llama(), name: ChatServing},
       # Nx for word embeddings
       # {Nx.Serving, serving: serving(), name: SentenceTransformer},
       # Start the Ecto repository
@@ -48,5 +50,17 @@ defmodule Search.Application do
       compile: [batch_size: 32, sequence_length: [32]],
       defn_options: [compiler: EXLA]
     )
+  end
+
+  def llama() do
+    llama = {:local, "/home/toranb/lit/out/lora_merged/Llama-2-7b-chat-hf"}
+    {:ok, spec} = Bumblebee.load_spec(llama, module: Bumblebee.Text.Llama, architecture: :for_causal_language_modeling)
+
+    {:ok, model_info} = Bumblebee.load_model(llama, spec: spec, backend: {EXLA.Backend, client: :host})
+    {:ok, tokenizer} = Bumblebee.load_tokenizer(llama, module: Bumblebee.Text.LlamaTokenizer)
+    {:ok, generation_config} = Bumblebee.load_generation_config(llama, spec_module: Bumblebee.Text.Llama)
+
+    generation_config = Bumblebee.configure(generation_config, max_new_tokens: 100)
+    Bumblebee.Text.generation(model_info, tokenizer, generation_config, defn_options: [compiler: EXLA])
   end
 end

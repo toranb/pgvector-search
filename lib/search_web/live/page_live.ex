@@ -26,23 +26,23 @@ defmodule SearchWeb.PageLive do
   @impl true
   def handle_event("add_message", %{"message" => text}, socket) do
     user_id = socket.assigns.user.id
-    version = socket.assigns.version
+    # version = socket.assigns.version
     thread = socket.assigns.thread
 
     %Search.Message{}
     |> Search.Message.changeset(%{text: text, thread_id: thread.id, user_id: user_id})
     |> Repo.insert!()
 
-    llama =
-      Task.async(fn ->
-        {:ok, prediction} = Replicate.Predictions.create(version, %{prompt: text})
-        Replicate.Predictions.wait(prediction)
-      end)
-
     # llama =
     #   Task.async(fn ->
-    #     {text, Nx.Serving.batched_run(ChatServing, text)}
+    #     {:ok, prediction} = Replicate.Predictions.create(version, %{prompt: text})
+    #     Replicate.Predictions.wait(prediction)
     #   end)
+
+    llama =
+      Task.async(fn ->
+        {text, Nx.Serving.batched_run(ChatServing, text)}
+      end)
 
     messages = Search.Message |> Repo.all()
 
@@ -53,7 +53,8 @@ defmodule SearchWeb.PageLive do
 
   @impl true
   def handle_info({ref, {question, %{results: [%{text: text}]}}}, socket) when socket.assigns.llama.ref == ref do
-    [_, result] = String.split(text, "#{question}")
+    results = String.split(text, "#{question}")
+    result = List.delete_at(results, 0) |> Enum.join()
 
     thread = socket.assigns.thread
     apple = Search.User |> Repo.get_by!(name: "apple rep")
