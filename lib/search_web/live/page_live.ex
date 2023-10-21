@@ -5,13 +5,13 @@ defmodule SearchWeb.PageLive do
 
   @impl true
   def mount(_, _, socket) do
-    model = Replicate.Models.get!("meta/llama-2-7b-chat")
+    model = Replicate.Models.get!("mistralai/mistral-7b-instruct-v0.1")
     version = Replicate.Models.get_latest_version!(model)
     user = Search.User |> Repo.get_by!(name: "toran billups")
     thread = Search.Thread |> Repo.get_by!(title: "apple")
     messages = Search.Message |> Repo.all()
 
-    socket = socket |> assign(thread: thread, messages: messages, user: user, version: version, result: nil, text: nil, loading: false, selected: nil, transformer: nil, llama: nil)
+    socket = socket |> assign(thread: thread, messages: messages, user: user, version: version, result: nil, text: nil, loading: false, selected: nil, transformer: nil, mistral: nil)
 
     {:ok, socket}
   end
@@ -26,34 +26,35 @@ defmodule SearchWeb.PageLive do
   @impl true
   def handle_event("add_message", %{"message" => text}, socket) do
     user_id = socket.assigns.user.id
-    version = socket.assigns.version
+    # version = socket.assigns.version
     thread = socket.assigns.thread
 
     %Search.Message{}
     |> Search.Message.changeset(%{text: text, thread_id: thread.id, user_id: user_id})
     |> Repo.insert!()
 
-    llama =
-      Task.async(fn ->
-        {:ok, prediction} = Replicate.Predictions.create(version, %{prompt: text})
-        Replicate.Predictions.wait(prediction)
-      end)
-
-    # llama =
+    # mistral =
     #   Task.async(fn ->
-    #     {text, Nx.Serving.batched_run(ChatServing, text)}
+    #     {:ok, prediction} = Replicate.Predictions.create(version, %{prompt: text})
+    #     Replicate.Predictions.wait(prediction)
     #   end)
+
+    mistral =
+      Task.async(fn ->
+        {text, Nx.Serving.batched_run(ChatServing, text)}
+      end)
 
     messages = Search.Message |> Repo.all()
 
-    socket = socket |> assign(messages: messages, llama: llama, text: nil, loading: true)
+    socket = socket |> assign(messages: messages, mistral: mistral, text: nil, loading: true)
 
     {:noreply, socket}
   end
 
   @impl true
-  def handle_info({ref, {question, %{results: [%{text: text}]}}}, socket) when socket.assigns.llama.ref == ref do
-    [_, result] = String.split(text, "#{question}")
+  def handle_info({ref, {question, %{results: [%{text: text}]}}}, socket) when socket.assigns.mistral.ref == ref do
+    results = String.split(text, "#{question}")
+    result = List.delete_at(results, 0) |> Enum.join()
 
     thread = socket.assigns.thread
     apple = Search.User |> Repo.get_by!(name: "apple rep")
@@ -64,11 +65,11 @@ defmodule SearchWeb.PageLive do
 
     messages = Search.Message |> Repo.all()
 
-    {:noreply, assign(socket, messages: messages, llama: nil, loading: false)}
+    {:noreply, assign(socket, messages: messages, mistral: nil, loading: false)}
   end
 
   @impl true
-  def handle_info({ref, {:ok, prediction}}, socket) when socket.assigns.llama.ref == ref do
+  def handle_info({ref, {:ok, prediction}}, socket) when socket.assigns.mistral.ref == ref do
     thread = socket.assigns.thread
     result = Enum.join(prediction.output)
     apple = Search.User |> Repo.get_by!(name: "apple rep")
@@ -79,7 +80,7 @@ defmodule SearchWeb.PageLive do
 
     messages = Search.Message |> Repo.all()
 
-    {:noreply, assign(socket, messages: messages, llama: nil, loading: false)}
+    {:noreply, assign(socket, messages: messages, mistral: nil, loading: false)}
   end
 
   @impl true
