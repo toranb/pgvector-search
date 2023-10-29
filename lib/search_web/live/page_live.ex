@@ -169,7 +169,7 @@ defmodule SearchWeb.PageLive do
                     <div :if={!is_nil(@selected)} class="pt-4 pb-1 px-4 flex flex-col grow overflow-y-auto">
                       <%= for message <- @selected.messages do %>
                       <div :if={message.user_id != @user.id} id={"message-#{message.id}"} class="my-2 flex flex-row justify-start space-x-1 self-start items-start">
-                        <div class="rounded-full w-9 h-9 min-w-9 flex justify-center items-center text-base bg-gray-100 text-gray-900 capitalize"><%= String.first(message.user.name) %></div>
+                        <div class="hidden rounded-full w-9 h-9 min-w-9 flex justify-center items-center text-base bg-gray-100 text-gray-900 capitalize"><%= String.first(message.user.name) %></div>
                         <div class="flex flex-col space-y-0.5 self-start items-start">
                           <div class="bg-gray-200 text-gray-900 ml-0 mr-12 py-2 px-3 inline-flex text-sm rounded-lg whitespace-pre-wrap"><%= message.text %></div>
                           <div class="mx-1 text-xs text-gray-500"><%= Calendar.strftime(message.inserted_at, "%B %d, %-I:%M %p") %></div>
